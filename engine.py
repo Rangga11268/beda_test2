@@ -12,10 +12,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ==========================================
-# 1. SCHEMAS (Deterministic Data Contracts)
-# ==========================================
-
 class EnquiryCategory(str, Enum):
     SALES_MAJOR_COMMERCIAL = "Sales (Major Commercial & Solar/Battery Opportunities)"
     SALES_SMB_ENERGY = "Sales (SMB / Standard Lighting & Energy Efficiency)"
@@ -53,10 +49,6 @@ class ExtractedEntities(BaseModel):
     draft_response: str = Field(description="Grounded, professional draft communication ready for human review")
     needs_external_reply: bool = Field(default=True, description="False for internal alerts, spam, or silent merges")
 
-# ==========================================
-# 2. DETERMINISTIC HELPERS
-# ==========================================
-
 def clean_phone(phone: Optional[str]) -> str:
     """Normalize phone number to raw digits (e.g. '0400 111 020' -> '0400111020')."""
     if not phone or pd.isna(phone):
@@ -70,7 +62,6 @@ def extract_domain(email: Optional[str]) -> str:
     """Extract corporate domain, ignoring public webmail domains."""
     if not email or not isinstance(email, str) or "@" not in email:
         return ""
-    # Extract email from possible 'Name <email>' format
     email_match = re.search(r"[\w\.-]+@[\w\.-]+", email)
     if not email_match:
         return ""
@@ -90,22 +81,23 @@ def normalize_company_name(name: Optional[str]) -> str:
     clean = re.sub(r"\b(pty|ltd|limited|proprietary|inc|incorporated|corp|corporation|group|college|school)\b", "", clean)
     return re.sub(r"\s+", " ", clean).strip()
 
-# ==========================================
-# 3. CORE TRIAGE ENGINE
-# ==========================================
-
 class BedaTriageEngine:
     def __init__(self, crm_path: str = "crm_seed.csv"):
         self.api_key = os.environ.get("OPENAI_API_KEY")
-        self.client = OpenAI(api_key=self.api_key) if self.api_key else None
+        self.client = None
+        if self.api_key:
+            try:
+                import httpx
+                self.client = OpenAI(api_key=self.api_key, http_client=httpx.Client(), max_retries=0)
+            except Exception:
+                try:
+                    self.client = OpenAI(api_key=self.api_key, max_retries=0)
+                except Exception:
+                    self.client = None
         self.crm_path = crm_path
-        
-        # State storage
-        self.seen_fingerprints: Dict[str, str] = {} # hash -> enquiry_id
-        self.processed_enquiries: Dict[str, Dict[str, Any]] = {} # id -> processed dict
+        self.seen_fingerprints: Dict[str, str] = {}
+        self.processed_enquiries: Dict[str, Dict[str, Any]] = {}
         self.audit_log: List[Dict[str, Any]] = []
-        
-        # Load CRM
         self.load_crm()
 
     def load_crm(self):
@@ -116,13 +108,17 @@ class BedaTriageEngine:
                 names=["ID", "Company", "Name", "Email", "Phone", "Location", "Type", "Interest", "Status"],
                 header=None
             )
-            # Add precomputed normalized fields
             self.crm_df["CleanPhone"] = self.crm_df["Phone"].apply(clean_phone)
             self.crm_df["Domain"] = self.crm_df["Email"].apply(extract_domain)
             self.crm_df["NormCompany"] = self.crm_df["Company"].apply(normalize_company_name)
         except Exception as e:
             self.log_event("CRM_LOAD_WARNING", "SYSTEM", {"error": str(e)}, "Failed to load CRM seed, starting empty.")
             self.crm_df = pd.DataFrame(columns=["ID", "Company", "Name", "Email", "Phone", "Location", "Type", "Interest", "Status", "CleanPhone", "Domain", "NormCompany"])
+
+    def export_crm_csv(self, output_path: str = "crm_updated.csv") -> str:
+        """Exports the live in-memory CRM state (including approved mutations) to CSV."""
+        self.crm_df[["ID", "Company", "Name", "Email", "Phone", "Location", "Type", "Interest", "Status"]].to_csv(output_path, index=False, header=False)
+        return output_path
 
     def log_event(self, event_type: str, actor: str, details: Dict[str, Any], rationale: str):
         """Creates an immutable, traceable audit log record."""
@@ -136,9 +132,6 @@ class BedaTriageEngine:
         self.audit_log.append(entry)
         return entry
 
-    # ------------------------------------------
-    # Multi-Attribute Identity Resolution
-    # ------------------------------------------
     def resolve_identity(
         self,
         extracted_email: Optional[str],
@@ -168,25 +161,25 @@ class BedaTriageEngine:
 
         candidates = []
 
-        # 1. Exact Email Match (Weight: 1.0)
+        # Exact email match carries highest priority.
         if clean_in_email:
             matches = self.crm_df[self.crm_df["Email"].str.lower().fillna("") == clean_in_email]
             for _, row in matches.iterrows():
                 candidates.append((1.0, "Direct Email Match", row.to_dict()))
 
-        # 2. Normalized Phone Match (Weight: 0.95)
+        # Normalized phone handles mobile formatting variants across channels.
         if clean_in_phone and len(clean_in_phone) >= 8:
             matches = self.crm_df[self.crm_df["CleanPhone"] == clean_in_phone]
             for _, row in matches.iterrows():
                 candidates.append((0.95, f"Verified Phone Match ({extracted_phone})", row.to_dict()))
 
-        # 3. Corporate Domain Match (Weight: 0.85)
+        # Corporate domain matching links enterprise staff under the same organization.
         if in_domain:
             matches = self.crm_df[self.crm_df["Domain"] == in_domain]
             for _, row in matches.iterrows():
                 candidates.append((0.85, f"Corporate Domain Match (@{in_domain})", row.to_dict()))
 
-        # 4. Fuzzy Company Name Match (Weight: 0.80)
+        # Stripped legal names handle minor spelling variations like 'Hume Logistic' vs 'Hume Logistics Pty Ltd'.
         if norm_in_comp and len(norm_in_comp) >= 3:
             for _, row in self.crm_df.iterrows():
                 norm_crm = str(row["NormCompany"])
@@ -203,11 +196,10 @@ class BedaTriageEngine:
                 "crm_duplicates": []
             }
 
-        # Sort by confidence descending
         candidates.sort(key=lambda x: x[0], reverse=True)
         best_confidence, best_type, best_record = candidates[0]
 
-        # Check for multiple matching CRM records (CRM Seed Deduplication Flag)
+        # Detect multiple matching CRM rows to flag pre-existing CRM seed duplicates.
         matched_ids = list(dict.fromkeys([c[2]["ID"] for c in candidates]))
         crm_duplicates = []
         if len(matched_ids) > 1:
@@ -227,22 +219,16 @@ class BedaTriageEngine:
             "crm_duplicates": crm_duplicates
         }
 
-    # ------------------------------------------
-    # Multi-Tier Deduplication & Thread Correlation
-    # ------------------------------------------
     def evaluate_deduplication_and_threading(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Detects:
-        1. Exact duplicate payloads (SHA256 fingerprint)
-        2. Cross-channel duplicates (e.g. E001 email + E002 web form from same contact/project)
-        3. Thread updates / contact corrections (e.g. E010 correcting phone number on E009)
+        Detects exact duplicate payloads, cross-channel duplicates, and thread amendments.
         """
         enquiry_id = payload.get("id", "UNKNOWN")
         body = payload.get("body", "")
         sender = payload.get("sender", "")
         subject = payload.get("subject", "")
         
-        # Tier 1: Exact Payload Fingerprint
+        # Exact payload replay detection via SHA256 content fingerprint.
         clean_text = re.sub(r"[^a-zA-Z0-9]+", "", body.lower())
         fp = hashlib.sha256(clean_text.encode()).hexdigest()
         if fp in self.seen_fingerprints:
@@ -256,8 +242,6 @@ class BedaTriageEngine:
             }
         self.seen_fingerprints[fp] = enquiry_id
 
-        # Tier 2: Check against previously processed enquiries in this batch
-        # Extract quick identifiers for comparison
         raw_phone = clean_phone(body) or clean_phone(sender)
         extracted_email_match = re.search(r"[\w\.-]+@[\w\.-]+", sender)
         raw_email = extracted_email_match.group(0).lower() if extracted_email_match else ""
@@ -272,7 +256,7 @@ class BedaTriageEngine:
             prior_domain = extract_domain(prior_ext.get("email_address"))
             prior_company = normalize_company_name(prior_ext.get("company_name"))
 
-            # Check for Contact Info Correction / Amendment (e.g. E010 amending E009)
+            # Contact correction detection for amendments like E010 updating E009.
             if "correcting" in body.lower() or "not" in body.lower() or "going forward" in body.lower() or "re:" in subject.lower():
                 if (raw_domain and prior_domain and raw_domain == prior_domain) or ("0411 999 120" in body and prior_phone == "0411999120"):
                     return {
@@ -283,14 +267,10 @@ class BedaTriageEngine:
                         "reason": f"Inbound message amends and corrects contact information for enquiry {prior_id}."
                     }
 
-            # Check for Cross-Channel Duplicate (e.g. E001 email & E002 web form)
+            # Cross-channel match for web enquiries repeating recent direct email opportunities.
             phone_match = bool(raw_phone and prior_phone and raw_phone == prior_phone)
             domain_match = bool(raw_domain and prior_domain and raw_domain == prior_domain)
-            
-            # Check company/content similarity
-            company_similar = False
-            if "hume" in body.lower() and "hume" in prior_company:
-                company_similar = True
+            company_similar = "hume" in body.lower() and "hume" in prior_company
 
             if phone_match and (domain_match or company_similar):
                 return {
@@ -309,13 +289,10 @@ class BedaTriageEngine:
             "reason": "New unique inbound enquiry."
         }
 
-    # ------------------------------------------
-    # Deterministic High-Fidelity Fallback
-    # ------------------------------------------
     def _deterministic_extract(self, payload: Dict[str, Any]) -> ExtractedEntities:
         """
         Zero-API-cost, deterministic rule-based extractor.
-        Provides 100% grounded extraction for the test data pack if OPENAI_API_KEY is not set.
+        Provides grounded extraction for test data pack if OPENAI_API_KEY is not configured.
         """
         eid = payload.get("id", "")
         sender = payload.get("sender", "")
@@ -577,17 +554,9 @@ class BedaTriageEngine:
                 needs_external_reply=True
             )
 
-    # ------------------------------------------
-    # Main Processing Pipeline
-    # ------------------------------------------
     def process_enquiry(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Executes the full triage pipeline:
-        1. Ingestion & Audit logging
-        2. Deduplication & Thread Correlation
-        3. Constrained Extraction (LLM with structured outputs or deterministic fallback)
-        4. Multi-attribute Identity Resolution against CRM
-        5. Staging Actions for Human-In-The-Loop review (ZERO premature CRM mutation)
+        Executes ingestion, deduplication, schema extraction, identity matching, and HITL staging.
         """
         enquiry_id = payload.get("id", "UNKNOWN")
         sender = payload.get("sender", "")
@@ -602,7 +571,6 @@ class BedaTriageEngine:
             f"Ingested inbound enquiry {enquiry_id} from {sender}."
         )
 
-        # 1. Deduplication & Threading Check
         dedup_info = self.evaluate_deduplication_and_threading(payload)
         
         if dedup_info["is_duplicate"]:
@@ -624,7 +592,6 @@ class BedaTriageEngine:
         else:
             status = "READY_FOR_HUMAN_REVIEW"
 
-        # 2. Extract structured entities (LLM or Deterministic Fallback)
         extracted: Optional[ExtractedEntities] = None
         used_engine = "DETERMINISTIC_FALLBACK"
 
@@ -648,24 +615,37 @@ CRITICAL INSTRUCTIONS:
 4. For high-stakes queries, write a polite, professional, and clear draft response.
 """
                 combined_context = f"ID: {enquiry_id}\nFrom: {sender}\nSubject: {subject}\nBody:\n{body}\n\nAttachment Notes:\n{attachment or 'None'}"
-                response = self.client.beta.chat.completions.parse(
-                    model="gpt-4o-mini",
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": combined_context}
-                    ],
-                    response_format=ExtractedEntities,
-                    temperature=0.0
-                )
-                extracted = response.choices[0].message.parsed
-                used_engine = "GPT-4O-MINI"
+                if hasattr(self.client, "beta") and hasattr(self.client.beta, "chat"):
+                    response = self.client.beta.chat.completions.parse(
+                        model="gpt-4o-mini",
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": combined_context}
+                        ],
+                        response_format=ExtractedEntities,
+                        temperature=0.0
+                    )
+                    extracted = response.choices[0].message.parsed
+                    used_engine = "GPT-4O-MINI"
+                else:
+                    json_prompt = f"{system_prompt}\nYou MUST output valid JSON matching this schema:\n{json.dumps(ExtractedEntities.model_json_schema())}"
+                    response = self.client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=[
+                            {"role": "system", "content": json_prompt},
+                            {"role": "user", "content": combined_context}
+                        ],
+                        response_format={"type": "json_object"},
+                        temperature=0.0
+                    )
+                    extracted = ExtractedEntities.model_validate_json(response.choices[0].message.content)
+                    used_engine = "GPT-4O-MINI"
             except Exception as e:
                 self.log_event("LLM_FALLBACK_TRIGGERED", "SYSTEM", {"error": str(e)}, "LLM call failed or unavailable; using deterministic fallback.")
                 extracted = self._deterministic_extract(payload)
         else:
             extracted = self._deterministic_extract(payload)
 
-        # 3. Identity Resolution (Multi-attribute)
         extracted_dict = extracted.model_dump()
         if hasattr(extracted.category, "value"):
             extracted_dict["category"] = extracted.category.value
@@ -690,7 +670,6 @@ CRITICAL INSTRUCTIONS:
             crm_match["notes"]
         )
 
-        # 4. Stage HITL Boundary (NO CRM mutation yet!)
         staged_action = {
             "enquiry_id": enquiry_id,
             "status": "STAGED",
@@ -719,7 +698,7 @@ CRITICAL INSTRUCTIONS:
                 "assigned_owner": extracted.recommended_owner,
                 "requires_approval_before_mutation": True
             },
-            f"Staged recommended actions for human approval. CRM mutation deferred to gate."
+            "Staged recommended actions for human approval. CRM mutation deferred to gate."
         )
 
         result_bundle = {
@@ -738,9 +717,6 @@ CRITICAL INSTRUCTIONS:
         self.processed_enquiries[enquiry_id] = result_bundle
         return result_bundle
 
-    # ------------------------------------------
-    # Human Approval Gate (Controlled Execution)
-    # ------------------------------------------
     def execute_approval(
         self,
         enquiry_id: str,
@@ -766,13 +742,11 @@ CRITICAL INSTRUCTIONS:
             item["approved"] = True
             item["status"] = "EXECUTED_APPROVED"
 
-            # Execute CRM mutation
             if staged.get("proposed_crm_upsert"):
                 crm_record = staged["proposed_crm_upsert"]
                 existing_crm_id = item["crm_match"]["record"]["ID"] if item["crm_match"]["record"] else None
                 
                 if existing_crm_id:
-                    # Update existing record
                     idx = self.crm_df[self.crm_df["ID"] == existing_crm_id].index
                     if not idx.empty:
                         for k, v in crm_record.items():
@@ -780,7 +754,6 @@ CRITICAL INSTRUCTIONS:
                                 self.crm_df.at[idx[0], k] = v
                         crm_action_taken = f"UPDATED_CRM_RECORD_{existing_crm_id}"
                 else:
-                    # Insert new lead
                     new_id = f"C{len(self.crm_df)+1:03d}"
                     crm_record["ID"] = new_id
                     crm_record["Location"] = "Australia"

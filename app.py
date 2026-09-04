@@ -5,9 +5,6 @@ import pandas as pd
 from datetime import datetime
 from engine import BedaTriageEngine
 
-# ==========================================
-# PAGE CONFIG & STYLING
-# ==========================================
 st.set_page_config(
     page_title="BEDA Intelligent Triage & HITL Gate",
     page_icon="⚡",
@@ -28,14 +25,12 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize Session State
 if "engine" not in st.session_state:
     st.session_state.engine = BedaTriageEngine()
 
 if "batch_run_done" not in st.session_state:
     st.session_state.batch_run_done = False
 
-# Load Synthetic Enquiries
 try:
     with open("enquiries.json", "r") as f:
         synthetic_enquiries = json.load(f)
@@ -43,26 +38,21 @@ except Exception as e:
     st.error(f"Error loading enquiries.json: {e}")
     synthetic_enquiries = []
 
-# ==========================================
-# SIDEBAR CONTROLS
-# ==========================================
 with st.sidebar:
     st.image("https://img.icons8.com/color/96/energy-meter.png", width=64)
     st.title("BEDA Systems")
     st.caption("AI Operations & HITL Triage v2.0")
     
-    # Engine status indicator
     if os.environ.get("OPENAI_API_KEY"):
         st.success("🟢 Engine: Live GPT-4o-mini (Pydantic Schema)")
     else:
-        st.info("🔵 Engine: High-Fidelity Deterministic Fallback (Zero-Cost Local Mode)")
+        st.info("🔵 Engine: Deterministic Fallback (Zero-Cost Local Mode)")
 
     st.markdown("---")
     st.subheader("Batch Operations")
     
     if st.button("▶️ Run Ingestion & Triage Batch", type="primary", use_container_width=True):
         with st.spinner("Ingesting untrusted data, running deduplication & identity resolution..."):
-            # Re-instantiate engine to allow fresh run
             st.session_state.engine = BedaTriageEngine()
             for eq in synthetic_enquiries:
                 st.session_state.engine.process_enquiry(eq)
@@ -83,15 +73,11 @@ with st.sidebar:
     st.markdown("---")
     st.caption("Test 2: Controlled Build | BEDA AI Internship")
 
-# ==========================================
-# MAIN INTERFACE
-# ==========================================
 st.markdown('<div class="main-header">⚡ BEDA Inbound Triage & Human-in-the-Loop Gateway</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-header">Automated classification, entity extraction, multi-attribute identity resolution, and staged approval boundary.</div>', unsafe_allow_html=True)
 
-# Ensure batch run was executed
+# Run initial ingestion batch on first render for responsive UX.
 if not st.session_state.batch_run_done:
-    # Auto-run first time for seamless UX
     for eq in synthetic_enquiries:
         st.session_state.engine.process_enquiry(eq)
     st.session_state.batch_run_done = True
@@ -99,7 +85,6 @@ if not st.session_state.batch_run_done:
 engine = st.session_state.engine
 processed_dict = engine.processed_enquiries
 
-# Metrics Summary Bar
 items_list = list(processed_dict.values())
 total_count = len(items_list)
 approved_count = sum(1 for i in items_list if i["approved"])
@@ -114,7 +99,6 @@ m3.metric("Duplicates Caught", dup_count)
 m4.metric("Time-Sensitive", time_sensitive_count)
 m5.metric("HITL Approved", approved_count)
 
-# Tabs
 tab_queue, tab_crm, tab_audit, tab_arch = st.tabs([
     "📬 Review Queue (HITL Gate)",
     "🗄️ Live CRM State",
@@ -122,18 +106,13 @@ tab_queue, tab_crm, tab_audit, tab_arch = st.tabs([
     "🏗️ Architecture & Decision Rubric"
 ])
 
-# ==========================================
-# TAB 1: REVIEW QUEUE
-# ==========================================
 with tab_queue:
-    # Filtering logic
     filtered_items = []
     for item in items_list:
         ext = item.get("extracted", {})
         status = item.get("status", "")
         owner = ext.get("recommended_owner", "")
 
-        # Status filter
         if filter_status == "Pending Review Only" and item.get("approved"):
             continue
         elif filter_status == "Flagged Duplicates" and not item.get("is_duplicate"):
@@ -143,7 +122,6 @@ with tab_queue:
         elif filter_status == "Executed / Approved" and not item.get("approved"):
             continue
 
-        # Owner filter
         if filter_owner != "All Owners" and owner != filter_owner:
             continue
 
@@ -161,7 +139,6 @@ with tab_queue:
         staged = item["staged_action"]
         is_appr = item["approved"]
 
-        # Card header badge
         badge_class = "status-badge-ready"
         if "DUPLICATE" in status:
             badge_class = "status-badge-dup"
@@ -174,7 +151,6 @@ with tab_queue:
 
         with st.expander(f"**{eid}** — {raw.get('subject', 'No Subject')}  |  Owner: {ext.get('recommended_owner')}  |  Status: {status}", expanded=(not is_appr and "DUPLICATE" not in status)):
             
-            # Show duplicate/thread notice banner if applicable
             if item.get("is_duplicate"):
                 st.warning(f"⚠️ **Duplicate Detected ({item['dedup_info']['duplicate_type']}):** {item['dedup_info']['reason']}")
             elif item.get("dedup_info", {}).get("is_thread_update"):
@@ -182,7 +158,6 @@ with tab_queue:
 
             c_raw, c_ext, c_crm, c_hitl = st.columns([1.1, 1.2, 1.1, 1.4])
 
-            # 1. RAW INBOUND
             with c_raw:
                 st.markdown("##### 📥 Raw Input")
                 st.caption(f"**From:** {raw.get('sender')}")
@@ -191,7 +166,6 @@ with tab_queue:
                     st.markdown("**Attachment Data:**")
                     st.code(raw.get("attachment"), language="text")
 
-            # 2. EXTRACTED FACTS & UNCERTAINTY
             with c_ext:
                 st.markdown("##### 🧠 Extraction & Logic")
                 st.markdown(f"**Category:** `{ext.get('category')}`")
@@ -217,7 +191,6 @@ with tab_queue:
                 if ext.get("uncertainty_reasons"):
                     st.caption("ℹ️ **Uncertainty / Assumptions:**\n" + "\n".join([f"- {u}" for u in ext['uncertainty_reasons']]))
 
-            # 3. IDENTITY RESOLUTION & CRM
             with c_crm:
                 st.markdown("##### 🔍 Identity Resolution")
                 if crm.get("match_found"):
@@ -237,7 +210,6 @@ with tab_queue:
                     st.info("🆕 **No Existing CRM Record**")
                     st.caption("New Prospect record staged for insertion upon approval.")
 
-            # 4. HITL APPROVAL GATE
             with c_hitl:
                 st.markdown("##### 🛡️ Human Approval Gate")
                 st.markdown(f"**Assigned Owner:** `{ext.get('recommended_owner')}`")
@@ -280,9 +252,6 @@ with tab_queue:
                             )
                             st.rerun()
 
-# ==========================================
-# TAB 2: LIVE CRM STATE
-# ==========================================
 with tab_crm:
     st.markdown("### 🗄️ Live CRM Database")
     st.markdown("This view demonstrates that **no CRM records are modified or created until human approval is explicitly granted**.")
@@ -292,19 +261,23 @@ with tab_crm:
         use_container_width=True,
         hide_index=True
     )
+
+    crm_csv_data = engine.crm_df[["ID", "Company", "Name", "Email", "Phone", "Location", "Type", "Interest", "Status"]].to_csv(index=False)
+    st.download_button(
+        label="📥 Export Live CRM (CSV)",
+        data=crm_csv_data,
+        file_name=f"beda_crm_live_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+        mime="text/csv"
+    )
     
     st.info("💡 **Deduplication Insight:** Notice `C001` and `C002` are existing duplicates in the seed data (Hume Logistics Pty Ltd vs Hume Logistic). Our multi-attribute identity matcher correctly identifies both and recommends merging.")
 
-# ==========================================
-# TAB 3: IMMUTABLE AUDIT TRAIL
-# ==========================================
 with tab_audit:
     st.markdown("### 📜 Immutable Audit Trail")
     st.markdown("Every ingestion, identity resolution, deduplication flag, and human operator action is recorded with timestamps and plain-English rationales.")
 
     audit_df = pd.DataFrame(engine.audit_log)
     if not audit_df.empty:
-        # Display table
         st.dataframe(
             audit_df[["timestamp", "event_type", "actor", "rationale"]],
             use_container_width=True,
@@ -320,9 +293,6 @@ with tab_audit:
     else:
         st.write("Audit log is empty.")
 
-# ==========================================
-# TAB 4: ARCHITECTURE & DECISION RUBRIC
-# ==========================================
 with tab_arch:
     st.markdown("""
     ### 🏗️ Architectural Foundations & Addressing Test 1 Feedback

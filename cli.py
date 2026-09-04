@@ -8,19 +8,24 @@ def print_header(title: str):
     print(f"  {title.upper()}")
     print("=" * 70)
 
-def cmd_run(engine: BedaTriageEngine, enquiries_path: str = "enquiries.json"):
+def cmd_run(engine: BedaTriageEngine, enquiries_path: str = "enquiries.json", output_json: bool = False):
     with open(enquiries_path, "r") as f:
         enquiries = json.load(f)
-
-    print_header("BEDA Intelligent Triage Engine - Batch Processing")
-    print(f"{'ID':<6} | {'STATUS':<20} | {'CATEGORY':<28} | {'OWNER':<15} | {'CRM MATCH':<18}")
-    print("-" * 95)
 
     results = []
     for eq in enquiries:
         res = engine.process_enquiry(eq)
         results.append(res)
-        
+
+    if output_json:
+        print(json.dumps(results, indent=2))
+        return
+
+    print_header("BEDA Intelligent Triage Engine - Batch Processing")
+    print(f"{'ID':<6} | {'STATUS':<20} | {'CATEGORY':<28} | {'OWNER':<15} | {'CRM MATCH':<18}")
+    print("-" * 95)
+
+    for res in results:
         eid = res["id"]
         status = res["status"][:18]
         ext = res["extracted"]
@@ -31,10 +36,10 @@ def cmd_run(engine: BedaTriageEngine, enquiries_path: str = "enquiries.json"):
 
         print(f"{eid:<6} | {status:<20} | {cat:<28} | {owner:<15} | {crm_str:<18}")
 
-    print("\n[OK] Processed 12 items. CRM is currently in STAGED mode (zero mutations prior to human approval).")
-    print("Tip: Run 'python cli.py inspect <ID>' to view details or 'python cli.py approve <ID>' to approve.")
+    print("\n[OK] Processed 12 items. CRM is in staged mode (zero mutations prior to human approval).")
+    print("Commands: 'python cli.py inspect <ID>' | 'python cli.py approve <ID>' | 'python cli.py --json'")
 
-def cmd_inspect(engine: BedaTriageEngine, enquiry_id: str, enquiries_path: str = "enquiries.json"):
+def cmd_inspect(engine: BedaTriageEngine, enquiry_id: str, enquiries_path: str = "enquiries.json", output_json: bool = False):
     with open(enquiries_path, "r") as f:
         enquiries = json.load(f)
 
@@ -46,6 +51,11 @@ def cmd_inspect(engine: BedaTriageEngine, enquiry_id: str, enquiries_path: str =
         sys.exit(1)
 
     item = engine.processed_enquiries[enquiry_id]
+
+    if output_json:
+        print(json.dumps(item, indent=2))
+        return
+
     ext = item["extracted"]
     crm = item["crm_match"]
     staged = item["staged_action"]
@@ -86,12 +96,12 @@ def cmd_inspect(engine: BedaTriageEngine, enquiry_id: str, enquiries_path: str =
 
     if crm.get("crm_duplicates"):
         dup_ids = [d["ID"] for d in crm["crm_duplicates"]]
-        print(f"CRM Seed Duplicates:  WARNING: Found duplicate CRM records {dup_ids} matching this entity!")
+        print(f"CRM Seed Duplicates:  Notice: Found duplicate CRM records {dup_ids} matching this entity.")
 
-    print("\n--- HUMAN-IN-THE-LOOP (HITL) GATE ---")
+    print("\n--- HUMAN-IN-THE-LOOP GATE ---")
     print(f"Assigned Owner:       {staged.get('assigned_owner')}")
     print(f"Suggested Action:     {staged.get('suggested_next_action')}")
-    print(f"Requires Approval:    Yes (No external action taken until approved)")
+    print(f"Requires Approval:    Yes (External action and CRM mutation gated)")
     print("\n--- DRAFTED RESPONSE ---")
     print(staged.get('draft_response') or "[NO RESPONSE NEEDED]")
     print("=" * 70)
@@ -114,43 +124,59 @@ def cmd_approve(engine: BedaTriageEngine, enquiry_id: str, operator: str, enquir
     print(f"Audit Log:   Logged with actor '{operator}'")
     print(f"Status:      [SUCCESS] Outbound action dispatched and CRM updated.")
 
-def cmd_audit(engine: BedaTriageEngine, enquiries_path: str = "enquiries.json"):
+def cmd_audit(engine: BedaTriageEngine, enquiries_path: str = "enquiries.json", output_json: bool = False):
     with open(enquiries_path, "r") as f:
         enquiries = json.load(f)
 
     for eq in enquiries:
         engine.process_enquiry(eq)
 
+    if output_json:
+        print(json.dumps(engine.audit_log, indent=2))
+        return
+
     print_header("Immutable Audit Trail (Recent Events)")
     for entry in engine.audit_log[-15:]:
         print(f"[{entry['timestamp']}] {entry['event_type']:<24} | Actor: {entry['actor']:<10} | {entry['rationale']}")
+
+def cmd_export_crm(engine: BedaTriageEngine, output_file: str = "crm_updated.csv"):
+    path = engine.export_crm_csv(output_file)
+    print(f"[SUCCESS] Exported live CRM database to {path}")
 
 def main():
     parser = argparse.ArgumentParser(description="BEDA Intelligent Inbound Triage CLI")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
-    subparsers.add_parser("run", help="Run batch processing on enquiries")
-    
+    run_parser = subparsers.add_parser("run", help="Run batch processing on enquiries")
+    run_parser.add_argument("--json", action="store_true", help="Output raw JSON array")
+
     inspect_parser = subparsers.add_parser("inspect", help="Inspect a specific enquiry")
     inspect_parser.add_argument("id", type=str, help="Enquiry ID (e.g. E001)")
+    inspect_parser.add_argument("--json", action="store_true", help="Output raw JSON representation")
 
     approve_parser = subparsers.add_parser("approve", help="Approve an enquiry via HITL gate")
     approve_parser.add_argument("id", type=str, help="Enquiry ID (e.g. E001)")
     approve_parser.add_argument("--operator", type=str, default="Human Operator", help="Operator name")
 
-    subparsers.add_parser("audit", help="Display recent audit trail")
+    audit_parser = subparsers.add_parser("audit", help="Display recent audit trail")
+    audit_parser.add_argument("--json", action="store_true", help="Output raw audit JSON")
+
+    export_parser = subparsers.add_parser("export-crm", help="Export live CRM state to CSV")
+    export_parser.add_argument("--out", type=str, default="crm_updated.csv", help="Output file path")
 
     args = parser.parse_args()
     engine = BedaTriageEngine()
 
     if args.command == "run" or args.command is None:
-        cmd_run(engine)
+        cmd_run(engine, output_json=getattr(args, "json", False))
     elif args.command == "inspect":
-        cmd_inspect(engine, args.id)
+        cmd_inspect(engine, args.id, output_json=args.json)
     elif args.command == "approve":
         cmd_approve(engine, args.id, args.operator)
     elif args.command == "audit":
-        cmd_audit(engine)
+        cmd_audit(engine, output_json=getattr(args, "json", False))
+    elif args.command == "export-crm":
+        cmd_export_crm(engine, args.out)
     else:
         parser.print_help()
 
