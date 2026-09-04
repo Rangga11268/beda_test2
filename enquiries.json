@@ -1,0 +1,86 @@
+[
+    {
+        "id": "E001",
+        "sender": "Amelia Grant <amelia.grant@humelogistics.example>",
+        "subject": "Solar and battery across our three Victorian sites",
+        "body": "We operate warehouses in Truganina, Dandenong and Epping. Combined electricity consumption is about 2.1 GWh per year. We are considering solar, possibly batteries and lighting upgrades. We would like an initial discussion next week. I have attached the latest Truganina bill. Please call me on 0400 111 020.",
+        "attachment": "Customer: Hume Logistics Pty Ltd\nSite: Truganina Distribution Centre\nBilling period: 1 July to 31 July 2026\nConsumption: 68,420 kWh\nMaximum demand: 172 kW\nTotal bill: $18,940\nNMI: 63051234567\nAccount contact: Amelia Grant"
+    },
+    {
+        "id": "E002",
+        "sender": "a.grant@humelogistics.example",
+        "subject": "Website enquiry",
+        "body": "Company: Hume Logistic. We have three distribution sites in Melbourne and want a solar proposal. Consumption around two gigawatt hours annually. Contact Amelia. Best number 0400 111 020.",
+        "attachment": ""
+    },
+    {
+        "id": "E003",
+        "sender": "Rohan Lee <rohan@greenfieldsfoods.example>",
+        "subject": "Invoice 1847 does not match PO",
+        "body": "Hi, our accounts team says invoice 1847 is $2,640 higher than the purchase order. Can someone check before Friday please? This is for the lighting project already completed at Geelong.",
+        "attachment": "Greenfields Foods\nPurchase order: GF PO 8821\nApproved value: $47,300 ex GST\nInvoice 1847: $49,940 ex GST\nProject: Geelong LED upgrade\nAccounts contact requests reconciliation before payment."
+    },
+    {
+        "id": "E004",
+        "sender": "sales@megaleadlists.example",
+        "subject": "Buy 50,000 Australian CEO leads today",
+        "body": "Special price expires in 24 hours. Reply now for cryptocurrency payment instructions.",
+        "attachment": ""
+    },
+    {
+        "id": "E005",
+        "sender": "Melissa Tran <melissa.tran@northbankcollege.example>",
+        "subject": "Government school lighting upgrade",
+        "body": "I manage facilities at Northbank College. We have approximately 1,100 fluorescent fittings and want to understand whether an LED upgrade could access any government incentives. I do not have our latest electricity bill with me. Could someone tell me what you need from us?",
+        "attachment": "Northbank College facilities notes\nMain campus approximately 1,100 fluorescent fittings.\nOperating hours mostly 7:00am to 6:00pm weekdays.\nSome gym and hall lighting operates evenings.\nNo current fixture schedule.\nNo electricity invoice supplied.\nCustomer asks about available incentive support."
+    },
+    {
+        "id": "E006",
+        "sender": "engineering@solarray.example",
+        "subject": "Harmonics question on proposed battery inverter",
+        "body": "We are reviewing the PCS specification on a 500 kW battery project. Can your engineer confirm acceptable THD limits at the point of common coupling and whether the current design requires an additional harmonic study?\n\nI am sending part 2 immediately after this email.",
+        "attachment": ""
+    },
+    {
+        "id": "E007",
+        "sender": "priya.dev@examplemail.test",
+        "subject": "Application for marketing internship",
+        "body": "I saw BEDA online and would love to apply for your marketing internship. My portfolio is attached.",
+        "attachment": ""
+    },
+    {
+        "id": "E008",
+        "sender": "Daniel Wu <daniel@solarainstall.example>",
+        "subject": "Crew availability for Ballarat install",
+        "body": "We can hold a four person crew for the week beginning 14 September, but need confirmation by Tuesday. Is the Ballarat commercial solar project proceeding?",
+        "attachment": ""
+    },
+    {
+        "id": "E009",
+        "sender": "facilities@harbourcoldstores.example",
+        "subject": "Electricity cost reduction",
+        "body": "We run a refrigerated warehouse in Newcastle. Bills are around $80,000 a month. Interested in solar and anything else that can reduce operating cost. I am the facilities manager, Sam. Mobile 0411 999 120.",
+        "attachment": ""
+    },
+    {
+        "id": "E010",
+        "sender": "sam@harbourcoldstores.example",
+        "subject": "Re: enquiry from our website",
+        "body": "Just correcting my number from the web form. It is 0411 999 102, not 0411 999 120. Please use this email address going forward.",
+        "attachment": ""
+    },
+    {
+        "id": "E011",
+        "sender": "alerts@beda.example",
+        "subject": "CRM sync failed overnight",
+        "body": "HubSpot sync job failed at 02:14. Error: OAuth token expired. 146 records remain unsynchronised. Retry disabled after three failures.",
+        "attachment": ""
+    },
+    {
+        "id": "E012",
+        "sender": "info@smallcafe.example",
+        "subject": "Solar for cafe",
+        "body": "We lease a 70 square metre cafe and spend about $900 per month on electricity. Can you quote solar? Landlord has not yet agreed to roof works.",
+        "attachment": ""
+    }
+]
