@@ -193,7 +193,7 @@ If recording a video walk-through, follow this concise script:
    - Point out `E002` flagged as cross-channel duplicate of `E001`, and `E010` linked to `E009`.
    - Run `python test_triage.py` to show 5 unit tests passing cleanly in 0.1s.
 3. **Web UI & HITL Boundary (1:15 - 2:15):**
-   - Open Streamlit (`http://localhost:8501`).
+   - Run `streamlit run app.py` in terminal and switch to browser at `http://localhost:8501`.
    - Show `E001` (Amelia Grant): Note the extraction of 2.1 GWh, Truganina bill $18,940, and the missing info alert (Dandenong/Epping bills needed).
    - Show Identity Resolution: Highlight that `C001` was matched, but `C002` was detected as an internal duplicate in CRM seed!
    - Edit the draft response in the text area and click `[Approve & Execute]`.
